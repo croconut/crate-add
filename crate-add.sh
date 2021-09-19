@@ -102,7 +102,7 @@ run_on_uninstalled() {
     for i in ${ARGS[@]}; do
       checkfile=$(construct_endpoint "$i")
       curl_result=$(curl -s "https://raw.githubusercontent.com/rust-lang/crates.io-index/master/$checkfile")
-      if [[ -z $(echo "$curl_result" | grep -oE "^404*") ]]; then
+      if [[ -z $(echo "$curl_result" | grep -oE "^[3-5]+[0-9]*") ]]; then
         last_version_json=$(echo "$curl_result" | tail -n1)
         last_version=$(echo "$last_version_json" | jq '.vers')
         # dont add if it's yanked
