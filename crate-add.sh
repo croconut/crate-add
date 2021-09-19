@@ -16,6 +16,8 @@ print_commands() {
   echo "${COMMANDS[@]} ${META_COMMANDS[@]}"
   echo
   echo "supports adding and removing dependencies and forwards commands to cargo e.g. 'crate-add install' is the same as 'cargo install'"
+  echo "you can also use crate-add pass <cargo_command> to do the same thing"
+  echo
   echo "add dependencies with crate-add add <crate-name1> <crate-name2> ..."
   echo "remove dependencies with crate-add remove <crate-name1> ..."
   echo
@@ -26,7 +28,7 @@ print_commands() {
 
 print_help() {
   echo
-  echo "$SCRIPT_NAME helps manage dependencies for rust projects"
+  echo "$SCRIPT_NAME v$VERSION helps manage dependencies for rust projects"
   echo
   print_commands
   echo
@@ -145,6 +147,8 @@ LISTMODE=""
 
 command="$1"
 ORIGINAL_COMMAND="$1"
+
+[[ -z "$ORIGINAL_COMMAND" ]] && print_help
 
 #credit: https://stackoverflow.com/questions/39305567/bash-implode-array-to-string
 metagrep=$(printf "%s|" "${META_COMMANDS[@]}")
