@@ -43,8 +43,7 @@ print_version() {
 #credit: https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
 echoerr() {
   printf >&2 "error: %s\n" "$*"
-  mkdir -p "$SWAP_DIR"
-  rm "$SWAP_FILENAME"
+  rm "$SWAP_FILENAME" ||:
   exit 1
 }
 
