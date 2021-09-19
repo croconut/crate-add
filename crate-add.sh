@@ -1,39 +1,27 @@
 #!/bin/bash
 
-#dependency check
-if  [[ "$(which jq)" == "" ]] || [[ "$(which curl)" == "" ]] || [[ "$(which tail)" == "" ]] || [[ "$(which awk)" == "" ]] || [[ "$(which grep)" == "" ]] || [[ "$(which sed)" == "" ]] || [[ "$(which tr)" == "" ]]; then
+#dependency checks
+if [[ "$(which jq)" == "" ]] || [[ "$(which curl)" == "" ]] || [[ "$(which tail)" == "" ]] || [[ "$(which awk)" == "" ]] || [[ "$(which grep)" == "" ]] || [[ "$(which sed)" == "" ]] || [[ "$(which tr)" == "" ]]; then
   echo -en "not all dependencies installed, recommended to run: \n\nsudo apt-get update && sudo apt-get install jq curl tail sed awk grep tr\n\n"
   exit 1
 fi
 
-if [[ "$(which cargo)" == "" ]]; then 
+if [[ "$(which cargo)" == "" ]]; then
   echo "install cargo before using crate-add"
   exit 1
 fi
 
-SCRIPT_NAME="crate-add"
-VERSION="1.0.0"
-COMMANDS=(add remove)
-#also commands that don't take any kind of action
-META_COMMANDS=(help version list)
-DEP_FILENAME=Cargo.toml
-SWAP_FILENAME=Cargo.toml.swp
-
-DEP_REGEX="^[[:space:]]*\[dependencies\]*"
-DEP_NAME="[dependencies]"
-DEV_DEP_REGEX="^[[:space:]]*\[dev\-dependencies\]*"
-DEV_DEP_NAME="[dev-dependencies]"
-CURRENT_DEP_REGEX="$DEP_REGEX"
-CURRENT_DEP_NAME="$DEP_NAME"
-
 print_commands() {
   echo "Available commands are:"
   echo "${COMMANDS[@]} ${META_COMMANDS[@]}"
-  echo 
-  echo "supports adding and removing dependencies as well as any normal cargo command (in particular update and build)"
+  echo
+  echo "supports adding and removing dependencies and forwards commands to cargo e.g. 'crate-add install' is the same as 'cargo install'"
   echo "add dependencies with crate-add add <crate-name1> <crate-name2> ..."
-  echo "remove normal dependencies with crate-add remove <crate-name1> ..."
-  echo "currently only adds lastest version of crate to dependency list"
+  echo "remove dependencies with crate-add remove <crate-name1> ..."
+  echo
+  echo "dev-dependencies are managed with adev / add-dev for adding and rdev / remove-dev for removing"
+  echo
+  echo "only the newest crate versions can be added as dependencies"
 }
 
 print_help() {
@@ -55,6 +43,7 @@ print_version() {
 #credit: https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
 echoerr() {
   printf >&2 "error: %s\n" "$*"
+  rm $SWAP_FILENAME
   exit 1
 }
 
@@ -73,11 +62,11 @@ parent-find() {
 
 crate_found() {
   case $1 in
-  "add")
+  "$BASE_ADD_COMMAND")
     echo "$2 already installed with version: $3, skipping"
     return 0
     ;;
-  "remove")
+  "$BASE_REMOVE_COMMAND")
     echo "removed $2 v$3"
     return 1
     ;;
@@ -100,10 +89,12 @@ construct_endpoint() {
 
 run_on_uninstalled() {
   local command=$1
+  local depname=$2
+  shift
   shift
   ARGS=($@)
   case $command in
-  "add")
+  "$BASE_ADD_COMMAND")
     for i in ${ARGS[@]}; do
       checkfile=$(construct_endpoint "$i")
       curl_result=$(curl -s "https://raw.githubusercontent.com/rust-lang/crates.io-index/master/$checkfile")
@@ -113,7 +104,7 @@ run_on_uninstalled() {
         # dont add if it's yanked
         yanked=$(echo "$last_version_json" | jq '.yanked')
         [[ "$yanked" == "true" ]] && echo "$i is no longer available" && continue
-        echo "adding $i = $last_version to dependencies"
+        echo "adding $i = $last_version to $depname"
         echo "$i = $last_version" >>$SWAP_FILENAME
       else
         echo "package not found for: $i"
@@ -121,8 +112,8 @@ run_on_uninstalled() {
       sleep 1s
     done
     ;;
-  "remove")
-    [[ ! -z "${ARGS[@]}" ]] && echo "nothing to remove for crates: ${ARGS[@]}"
+  "$BASE_REMOVE_COMMAND")
+    [[ ! -z "${ARGS[@]}" ]] && echo "nothing to remove from $depname for crates: ${ARGS[@]}"
     ;;
   *)
     echoerr "unhandled command"
@@ -130,90 +121,77 @@ run_on_uninstalled() {
   esac
 }
 
-OPTIND=1
 
-ARGS=$(getopt -o 'h:v::d' --long 'help:,version::,verbose::,dev' -- "$@") || exit
-eval "set -- $ARGS"
+SCRIPT_NAME="crate-add"
+VERSION="1.1.0"
+#all commands / meta_commands that end in dev are targetted at dev dependencies
+#IMPORTANT: only add and remove commands get to start with a and r respectively
+BASE_ADD_COMMAND="a"
+BASE_REMOVE_COMMAND="r"
+COMMANDS=(add "$BASE_ADD_COMMAND" adev a-dev add-dev adddev remove "$BASE_REMOVE_COMMAND" rdev r-dev remove-dev removedev)
+#also commands that don't take any kind of action
+META_COMMANDS=(help version pass list l list-dev ldev l-dev listdev)
+DEP_FILENAME="Cargo.toml"
+SWAP_DIR="/tmp/$SCRIPT_NAME"
+SWAP_FILENAME="$SWAP_DIR/Cargo.toml.swp"
 
+DEP_REGEX="^[[:space:]]*\[dependencies\]*"
+DEP_NAME="[dependencies]"
+DEV_DEP_REGEX="^[[:space:]]*\[dev\-dependencies\]*"
+DEV_DEP_NAME="[dev-dependencies]"
+CURRENT_DEP_REGEX="$DEP_REGEX"
+CURRENT_DEP_NAME="$DEP_NAME"
 LISTMODE=""
 
-while true; do
-  case $1 in
-  --version)
-    print_version
-    ;;
-  -v | --verbose)
-    #TODO
-    set -x
-    shift
-    ;;
-  -h | --help)
-    print_help
-    ;;
-  -d | --dev)
-    CURRENT_DEP_REGEX="$DEV_DEP_REGEX"
-    CURRENT_DEP_NAME="$DEV_DEP_NAME"
-    shift
-    ;;
-  --)
-    shift
-    break
-    ;;
-  *)
-    echoerr "abnormal error with parsing options"
-    ;; # error
-  esac
-done
+command="$1"
+ORIGINAL_COMMAND="$1"
+shift
+crates=($@)
 
-ARGS=($@)
+#credit: https://stackoverflow.com/questions/39305567/bash-implode-array-to-string
+metagrep=$(printf "%s|" "${META_COMMANDS[@]}")
+metagrep="${metagrep%|}"
 
-if [[ "$1" == "${META_COMMANDS[0]}" ]]; then
+if [[ ! -z $(echo "$command" | grep -Eow "^(${META_COMMANDS[0]})$") ]]; then
   print_help
-fi
-
-if [[ "$1" == "${META_COMMANDS[1]}" ]]; then
+elif [[ ! -z $(echo "$command" | grep -Eow "^(${META_COMMANDS[1]})$") ]]; then
   print_version
-fi
-
-if [[ "$1" == "${META_COMMANDS[2]}" ]]; then
+elif [[ ! -z $(echo "$command" | grep -Eow "^(${META_COMMANDS[2]})$") ]]; then
+  [[ -z "$@" ]] && echoerr "no command to pass to cargo"
+  echo "passing command to cargo"
+  echo "cargo $@"
+  echo $(cargo $@)
+  exit 0
+# all other meta commands are just variations of list
+elif [[ ! -z $(echo "$command" | grep -Eow "^(${metagrep[@]})$") ]]; then
   LISTMODE="1"
-  shift
 fi
 
 if [[ -z "$LISTMODE" ]]; then
 
-  if [[ -z $@ ]]; then
+  if [[ -z "$@" ]]; then
     echoerr "missing command and/or crate"
   fi
 
-  command=$1
-  shift
+  #credit: https://stackoverflow.com/questions/39305567/bash-implode-array-to-string
+  commandgrep=$(printf "%s|" "${COMMANDS[@]}")
+  commandgrep="${commandgrep%|}"
 
-  if [[ ! -z $(echo "${META_COMMANDS[@]}" | grep -ow "$command") ]]; then
-    case $command in
-    "${META_COMMANDS[0]}")
-      print_version
-      ;;
-    "${META_COMMANDS[1]}")
-      print_help
-      ;;
-    "${META_COMMANDS[2]}")
-      LISTMODE="1"
-      ;;
-    *)
-      echoerr "unhandled meta command"
-      ;; # error
-    esac
-  fi
-
-  if [[ -z $(echo "${COMMANDS[@]}" | grep -ow "$command") ]]; then
-    echo $(cargo $command $@)
+  if [[ -z $(echo "$command" | grep -Eow "^(${commandgrep[@]})$") ]]; then
+    echo "Command not found in list for $SCRIPT_NAME: ${commandgrep[@]}"
+    echo "Passthrough running:"
+    echo "cargo $@"
+    echo $(cargo $@)
     exit 0
   fi
 
-  if [[ -z $@ ]]; then
-    echoerr "this command requires at least one argument"
+  if [[ ! -z $(echo "$command" | grep -Eo "^($BASE_ADD_COMMAND)*") ]]; then
+    command="$BASE_ADD_COMMAND"
+  elif [[ ! -z $(echo "$command" | grep -Eo "^($BASE_REMOVE_COMMAND)*") ]]; then
+    command="$BASE_REMOVE_COMMAND"
   fi
+  
+  [[ -z $@ ]] && echoerr "$command requires at least one argument"
 
 else
   echo "Current $CURRENT_DEP_NAME:"
@@ -225,8 +203,12 @@ if [[ -z $DEPFILE ]]; then
   echoerr "could not find \`$DEP_FILENAME\` in \`$PWD\` or any parent directory"
 fi
 
-crates=($@)
+if [[ ! -z $(echo "$ORIGINAL_COMMAND" | grep -Eo "*dev$") ]]; then
+  CURRENT_DEP_NAME="$DEV_DEP_NAME"
+  CURRENT_DEP_REGEX="$DEV_DEP_REGEX"
+fi
 
+mkdir -p $SWAP_DIR
 >$SWAP_FILENAME
 touch $SWAP_FILENAME
 passed_dep="0"
@@ -262,15 +244,15 @@ done <$DEPFILE
 [[ ! -z "$LISTMODE" ]] && rm $SWAP_FILENAME && exit 0
 
 #no section was found, need to create it at end of file
-[[ -z "$parse" ]] && echo >>$SWAP_FILENAME && echo "$CURRENT_DEP_NAME" >>$SWAP_FILENAME 
+[[ -z "$parse" ]] && echo >>$SWAP_FILENAME && echo "$CURRENT_DEP_NAME" >>$SWAP_FILENAME
 
-run_on_uninstalled "$command" "${crates[@]}"
+run_on_uninstalled "$command" "$CURRENT_DEP_NAME" "${crates[@]}"
 
 parse=""
 # write lines to file after the dependencies
 while IFS= read line || [ -n "$line" ]; do
   if [[ ! -z "$parse" ]]; then
-    if [[ -z "$parse2" ]]; then 
+    if [[ -z "$parse2" ]]; then
       parse2=$(echo "$line" | grep -Eo "^[[:space:]]*\[")
       [[ ! -z "$parse2" ]] && echo >>$SWAP_FILENAME && echo "$line" >>$SWAP_FILENAME
     else
@@ -281,7 +263,7 @@ while IFS= read line || [ -n "$line" ]; do
   fi
 done <$DEPFILE
 
-while [[ -z $(tail -n1 $SWAP_FILENAME) ]]; do 
+while [[ -z $(tail -n1 $SWAP_FILENAME) ]]; do
   sed -i \$d $SWAP_FILENAME
 done
 
