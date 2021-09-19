@@ -107,7 +107,7 @@ run_on_uninstalled() {
         yanked=$(echo "$last_version_json" | jq '.yanked')
         [[ "$yanked" == "true" ]] && echo "$i is no longer available" && continue
         echo "adding $i = $last_version to $depname"
-        echo "$i = $last_version" >>$SWAP_FILENAME
+        echo "$i = $last_version" >>"$SWAP_FILENAME"
       else
         echo "package not found for: $i"
       fi
@@ -208,7 +208,7 @@ crates=($@)
 
 DEPFILE=$(parent-find "$DEP_FILENAME" "$PWD")
 
-[[ -z $DEPFILE ]] && echoerr "could not find \`$DEP_FILENAME\` in \`$PWD\` or any parent directory"
+[[ -z "$DEPFILE" ]] && echoerr "could not find \`$DEP_FILENAME\` in \`$PWD\` or any parent directory"
 
 if [[ ! -z $(echo "$ORIGINAL_COMMAND" | grep -Eo "*dev$") ]]; then
   CURRENT_DEP_NAME="$DEV_DEP_NAME"
@@ -221,11 +221,11 @@ fi
 #we reverse the call if it's an add to remove the dependency from the dev or vice
 #versa and install to the requested one
 if [[ -z "$LISTMODE" ]] && [[ "$command" == "$BASE_ADD_COMMAND" ]]; then
-  bash $ORIGINAL_CALL $opposite_command $@
+  bash "$ORIGINAL_CALL" $opposite_command $@
 fi
 
 mkdir -p $SWAP_DIR
->$SWAP_FILENAME
+>"$SWAP_FILENAME"
 touch $SWAP_FILENAME
 passed_dep="0"
 parse=""
@@ -243,24 +243,24 @@ while IFS= read line || [ -n "$line" ]; do
         matched="$i"
         # here we run the command immediately, we tell line to write based on the return, if remove we would just return 1
         # if add we return 0
-        crate_found "$command" "$i" "$version" "$CURRENT_DEP_NAME" && echo $line >>$SWAP_FILENAME
+        crate_found "$command" "$i" "$version" "$CURRENT_DEP_NAME" && echo $line >>"$SWAP_FILENAME"
         break
       fi
     done
     # removing crate as already handled if matched, or we write the line since we're not dealing with that crate
-    [[ -z "$matched" ]] && [[ ! -z "$line" ]] && echo $line >>$SWAP_FILENAME
+    [[ -z "$matched" ]] && [[ ! -z "$line" ]] && echo $line >>"$SWAP_FILENAME"
     [[ ! -z "$matched" ]] && crates=(${crates[@]/$matched/})
   else
     # when we haven't found the dependencies we're looking for yet, insert to the swap file
-    echo $line >>$SWAP_FILENAME
+    echo $line >>"$SWAP_FILENAME"
     parse=$(echo "$line" | grep -Eo "$CURRENT_DEP_REGEX")
   fi
-done <$DEPFILE
+done <"$DEPFILE"
 
-[[ ! -z "$LISTMODE" ]] && rm $SWAP_FILENAME && exit 0
+[[ ! -z "$LISTMODE" ]] && rm "$SWAP_FILENAME" && exit 0
 
 #no section was found, need to create it at end of file
-[[ -z "$parse" ]] && echo >>$SWAP_FILENAME && echo "$CURRENT_DEP_NAME" >>$SWAP_FILENAME
+[[ -z "$parse" ]] && echo >>"$SWAP_FILENAME" && echo "$CURRENT_DEP_NAME" >>"$SWAP_FILENAME"
 
 run_on_uninstalled "$command" "$CURRENT_DEP_NAME" "${crates[@]}"
 
@@ -270,18 +270,18 @@ while IFS= read line || [ -n "$line" ]; do
   if [[ ! -z "$parse" ]]; then
     if [[ -z "$parse2" ]]; then
       parse2=$(echo "$line" | grep -Eo "^[[:space:]]*\[")
-      [[ ! -z "$parse2" ]] && echo >>$SWAP_FILENAME && echo "$line" >>$SWAP_FILENAME
+      [[ ! -z "$parse2" ]] && echo >>"$SWAP_FILENAME" && echo "$line" >>"$SWAP_FILENAME"
     else
-      echo "$line" >>$SWAP_FILENAME
+      echo "$line" >>"$SWAP_FILENAME"
     fi
   else
     parse=$(echo "$line" | grep -Eo "$CURRENT_DEP_REGEX")
   fi
-done <$DEPFILE
+done <"$DEPFILE"
 
-while [[ -z $(tail -n1 $SWAP_FILENAME) ]]; do
-  sed -i \$d $SWAP_FILENAME
+while [[ -z $(tail -n1 "$SWAP_FILENAME") ]]; do
+  sed -i \$d "$SWAP_FILENAME"
 done
 
-cat $SWAP_FILENAME >$DEPFILE
-rm $SWAP_FILENAME
+cat "$SWAP_FILENAME" >"$DEPFILE"
+rm "$SWAP_FILENAME"
