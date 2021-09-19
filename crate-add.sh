@@ -47,14 +47,6 @@ print_version() {
   exit 0
 }
 
-#TOOD
-print_list() {
-  echo
-  echo "Installed crates:"
-  echo
-  exit 0
-}
-
 #credit: https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
 echoerr() {
   printf >&2 "error: %s\n" "$*"
