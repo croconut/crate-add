@@ -43,7 +43,7 @@ print_version() {
 #credit: https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
 echoerr() {
   printf >&2 "error: %s\n" "$*"
-  2> /dev/null rm "$SWAP_FILENAME" ||:
+  rm 2>/dev/null "$SWAP_FILENAME" || :
   exit 1
 }
 
@@ -63,11 +63,11 @@ parent-find() {
 crate_found() {
   case $1 in
   "$BASE_ADD_COMMAND")
-    echo "$2 already installed with version: $3, skipping"
+    echo "$2 already installed to $4 with version: $3, skipping"
     return 0
     ;;
   "$BASE_REMOVE_COMMAND")
-    echo "removed $2 v$3"
+    echo "removed $2 v$3 from $4"
     return 1
     ;;
   *)
@@ -121,9 +121,8 @@ run_on_uninstalled() {
   esac
 }
 
-
 SCRIPT_NAME="crate-add"
-VERSION="1.1.1"
+VERSION="1.2.0"
 #all commands / meta_commands that end in dev are targetted at dev dependencies
 #IMPORTANT: only add and remove commands get to start with a and r respectively
 BASE_ADD_COMMAND="a"
@@ -141,6 +140,7 @@ DEV_DEP_REGEX="^[[:space:]]*\[dev\-dependencies\]*"
 DEV_DEP_NAME="[dev-dependencies]"
 CURRENT_DEP_REGEX="$DEP_REGEX"
 CURRENT_DEP_NAME="$DEP_NAME"
+ORIGINAL_CALL="$0"
 LISTMODE=""
 
 command="$1"
@@ -155,10 +155,11 @@ if [[ ! -z $(echo "$command" | grep -Eow "^(${META_COMMANDS[0]})$") ]]; then
 elif [[ ! -z $(echo "$command" | grep -Eow "^(${META_COMMANDS[1]})$") ]]; then
   print_version
 elif [[ ! -z $(echo "$command" | grep -Eow "^(${META_COMMANDS[2]})$") ]]; then
+  shift
   [[ -z "$@" ]] && echoerr "no command to pass to cargo"
   echo "passing command to cargo"
   echo "cargo $@"
-  echo $(cargo $@)
+  cargo "$@"
   exit 0
 # all other meta commands are just variations of list
 elif [[ ! -z $(echo "$command" | grep -Eow "^(${metagrep[@]})$") ]]; then
@@ -179,35 +180,44 @@ if [[ -z "$LISTMODE" ]]; then
     echo "Command not found in list for $SCRIPT_NAME: ${commandgrep[@]}"
     echo "Passthrough running:"
     echo "cargo $@"
-    echo $(cargo $@)
+    cargo "$@"
     exit 0
   fi
 
+  opposite_command="l"
+
   if [[ ! -z $(echo "$command" | grep -Eo "^($BASE_ADD_COMMAND)*") ]]; then
     command="$BASE_ADD_COMMAND"
+    opposite_command="${BASE_REMOVE_COMMAND}dev"
   elif [[ ! -z $(echo "$command" | grep -Eo "^($BASE_REMOVE_COMMAND)*") ]]; then
     command="$BASE_REMOVE_COMMAND"
+    opposite_command="${BASE_ADD_COMMAND}dev"
   fi
 
   shift
-  
-  [[ -z $@ ]] && echoerr "$command requires at least one argument"
 
-else
-  echo "Current $CURRENT_DEP_NAME:"
+  [[ -z $@ ]] && echoerr "$ORIGINAL_COMMAND requires at least one argument"
+
 fi
 
 crates=($@)
 
 DEPFILE=$(parent-find "$DEP_FILENAME" "$PWD")
 
-if [[ -z $DEPFILE ]]; then
-  echoerr "could not find \`$DEP_FILENAME\` in \`$PWD\` or any parent directory"
-fi
+[[ -z $DEPFILE ]] && echoerr "could not find \`$DEP_FILENAME\` in \`$PWD\` or any parent directory"
 
 if [[ ! -z $(echo "$ORIGINAL_COMMAND" | grep -Eo "*dev$") ]]; then
   CURRENT_DEP_NAME="$DEV_DEP_NAME"
   CURRENT_DEP_REGEX="$DEV_DEP_REGEX"
+  opposite_command="${opposite_command:0:1}"
+fi
+
+[[ ! -z "$LISTMODE" ]] && echo "Current $CURRENT_DEP_NAME:"
+
+#we reverse the call if it's an add to remove the dependency from the dev or vice
+#versa and install to the requested one
+if [[ -z "$LISTMODE" ]] && [[ "$command" == "$BASE_ADD_COMMAND" ]]; then
+  bash $ORIGINAL_CALL $opposite_command $@
 fi
 
 mkdir -p $SWAP_DIR
@@ -229,7 +239,7 @@ while IFS= read line || [ -n "$line" ]; do
         matched="$i"
         # here we run the command immediately, we tell line to write based on the return, if remove we would just return 1
         # if add we return 0
-        crate_found "$command" "$i" "$version" && echo $line >>$SWAP_FILENAME
+        crate_found "$command" "$i" "$version" "$CURRENT_DEP_NAME" && echo $line >>$SWAP_FILENAME
         break
       fi
     done
