@@ -6,7 +6,12 @@ if  [[ "$(which jq)" == "" ]] || [[ "$(which curl)" == "" ]] || [[ "$(which tail
   exit 1
 fi
 
-SCRIPT_NAME="crate-dependencies"
+if [[ "$(which cargo)" == "" ]]; then 
+  echo "install cargo before using crate-add"
+  exit 1
+fi
+
+SCRIPT_NAME="crate-add"
 VERSION="1.0.0"
 COMMANDS=(add remove)
 #also commands that don't take any kind of action
