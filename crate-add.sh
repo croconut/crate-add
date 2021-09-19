@@ -124,7 +124,7 @@ run_on_uninstalled() {
 }
 
 SCRIPT_NAME="crate-add"
-VERSION="1.2.0"
+VERSION="1.2.1"
 #all commands / meta_commands that end in dev are targetted at dev dependencies
 #IMPORTANT: only add and remove commands get to start with a and r respectively
 BASE_ADD_COMMAND="a"
