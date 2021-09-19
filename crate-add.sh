@@ -43,7 +43,7 @@ print_version() {
 #credit: https://stackoverflow.com/questions/2990414/echo-that-outputs-to-stderr
 echoerr() {
   printf >&2 "error: %s\n" "$*"
-  rm "$SWAP_FILENAME" ||:
+  2> /dev/null rm "$SWAP_FILENAME" ||:
   exit 1
 }
 
@@ -123,7 +123,7 @@ run_on_uninstalled() {
 
 
 SCRIPT_NAME="crate-add"
-VERSION="1.1.0"
+VERSION="1.1.1"
 #all commands / meta_commands that end in dev are targetted at dev dependencies
 #IMPORTANT: only add and remove commands get to start with a and r respectively
 BASE_ADD_COMMAND="a"
@@ -145,8 +145,6 @@ LISTMODE=""
 
 command="$1"
 ORIGINAL_COMMAND="$1"
-shift
-crates=($@)
 
 #credit: https://stackoverflow.com/questions/39305567/bash-implode-array-to-string
 metagrep=$(printf "%s|" "${META_COMMANDS[@]}")
@@ -190,12 +188,16 @@ if [[ -z "$LISTMODE" ]]; then
   elif [[ ! -z $(echo "$command" | grep -Eo "^($BASE_REMOVE_COMMAND)*") ]]; then
     command="$BASE_REMOVE_COMMAND"
   fi
+
+  shift
   
   [[ -z $@ ]] && echoerr "$command requires at least one argument"
 
 else
   echo "Current $CURRENT_DEP_NAME:"
 fi
+
+crates=($@)
 
 DEPFILE=$(parent-find "$DEP_FILENAME" "$PWD")
 
