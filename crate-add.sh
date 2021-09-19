@@ -276,7 +276,7 @@ while IFS= read line || [ -n "$line" ]; do
   fi
 done <$DEPFILE
 
-while [[ -z $(tail -n2 $SWAP_FILENAME) ]]; do 
+while [[ -z $(tail -n1 $SWAP_FILENAME) ]]; do 
   sed -i \$d $SWAP_FILENAME
 done
 
